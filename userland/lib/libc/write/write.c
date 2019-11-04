@@ -27,53 +27,16 @@
  * SUCH DAMAGE.
  */
 
+#include <unistd.h>
+
 /*
- * consoletest.c
- *
- * 	Tests whether console can be written to.
- *
- * This should run correctly when open and write syscalls are correctly implemented
+ * POSIX C function: retrieve time in seconds since the epoch.
+ * Uses the OS/161 system call __time, which does the same thing
+ * but also returns nanoseconds.
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <err.h>
-#include <test161/test161.h>
-
-int
-main(int argc, char **argv)
+ssize_t
+write(int fd, const void *buf, size_t buflen)
 {
-
-	// Assume argument passing is *not* supported.
-
-	(void) argc;
-	(void) argv;
-
-	int fd, fd1;
-	// Attempt to open a file that we 'know' exists
-	fd = open("bin/true", O_RDONLY);
-	if(fd < 0) {
-		err(-1, "Open syscall failed");
-	}
-	else if(fd < 3) {
-		warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	}
-
-	// Attempt to open the same file again. We should get a different fd
-	//fd1 = open("bin/true", O_RDONLY);
-	//if(fd1 < 0) {
-	//	err(-1, "Open syscall failed");
-	//}
-	//else if(fd1 < 3) {
-	//	warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	//}
-	//else if(fd1 == fd) {
-	//	err(-1, "Open syscall returned same file descriptor for second open() call\n");
-	//}
-
-
-	success(TEST161_SUCCESS, SECRET, "/testbin/opentest");
-	return 0;
+	return write(fd, buf, buflen);
 }

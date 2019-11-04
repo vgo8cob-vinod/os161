@@ -48,12 +48,13 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
-
+#include <synch.h>
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
+static int8_t flag_t =0;
 struct proc *kproc;
-
+struct proc* processtable_a[PID_MAX]={NULL};//check it later if extern is ok
 /*
  * Create a proc structure.
  */
@@ -62,26 +63,55 @@ struct proc *
 proc_create(const char *name)
 {
 	struct proc *proc;
-
+	int i;
+	struct lock *lock = kmalloc(sizeof(lock));
+	struct cv *cv = kmalloc(sizeof(cv));
 	proc = kmalloc(sizeof(*proc));
+
+	
 	if (proc == NULL) {
 		return NULL;
 	}
+
 	proc->p_name = kstrdup(name);
 	if (proc->p_name == NULL) {
 		kfree(proc);
 		return NULL;
 	}
+	if(flag_t!=0)
+	{
+		for(i=PID_MIN;i<PID_MAX;i++)
+		{
+			if(processtable_a[i]==NULL)
+			{
+				processtable_a[i] = proc;
+				break;
+			}
+		}
+		proc->PPID_i=curproc->PID_i;
+		proc->PID_i=i;
+	}
+	else
+	{
+		proc->PPID_i=1;
+		proc->PID_i=1;
+	}
 
 	proc->p_numthreads = 0;
 	spinlock_init(&proc->p_lock);
 
+	proc->exit_code_i = 0;
+	proc->exited_b = 0;
+
 	/* VM fields */
 	proc->p_addrspace = NULL;
-
+	lock=lock_create("parent11");
+cv=cv_create("parent11");
+	proc->proc_lock=lock;
+	proc->proc_cv=cv;
 	/* VFS fields */
 	proc->p_cwd = NULL;
-
+	
 	return proc;
 }
 
@@ -182,6 +212,7 @@ proc_bootstrap(void)
 	if (kproc == NULL) {
 		panic("proc_create for kproc failed\n");
 	}
+flag_t=1;
 }
 
 /*

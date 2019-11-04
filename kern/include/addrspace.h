@@ -47,6 +47,11 @@ struct vnode;
  *
  * You write this.
  */
+//enum vm_state
+//{
+//free,
+//fixed
+//};
 
 struct addrspace {
 #if OPT_DUMBVM
@@ -62,6 +67,13 @@ struct addrspace {
 #endif
 };
 
+
+///struct coremap
+//{
+//vm_state state;
+//int chunk_size;
+//int owner; 
+//};
 /*
  * Functions in addrspace.c:
  *

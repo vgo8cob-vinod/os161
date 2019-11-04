@@ -45,44 +45,78 @@
 #include <syscall.h>
 #include <test.h>
 #include <synch.h>
+#include <copyinout.h>
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
  *
  * Calls vfs_open on progname and thus may destroy it.
  */
+#define p(addr)      (*(int8_t*)addr)
 int
-runprogram(char *progname)
+sys_execv(const_userptr_t progname,char **argv)
 {
 	struct addrspace *as;
+volatile struct proc *t_proc= kmalloc(sizeof(*t_proc));
 	struct vnode *v;
-	vaddr_t entrypoint, stackptr;
-	int result;
-	struct vnode *v0;
-	struct vnode *v1;
-	struct vnode *v2;
-	struct lock *lock = kmalloc(sizeof(*lock));
-	FileHandle_st *Std_in= kmalloc(sizeof(FileHandle_st));
-	FileHandle_st *Std_out= kmalloc(sizeof(FileHandle_st));
-	FileHandle_st *Std_err= kmalloc(sizeof(FileHandle_st));
-	int i=0;
-	char str[5] ="con:" ;
-	char str1[5] ="con:" ;
-	char str2[5] ="con:" ; 
-
-	for(i=0;i<OPEN_MAX;i++)
-	{
-		curproc->filetable_a[i]= NULL;
-	}
+	vaddr_t entrypoint, stackptr;//stckptr_temp;//stackptr_final;
+	char **argv1;
+	int result,sum=0,argc=0,temp;
+	int *strlen;
+	char *lval;
+	char **fin;
+vaddr_t mo; 
+struct vnode *p_cwd;
+char *sttr;
+char *des= kmalloc(sizeof(progname)) ;
+	int i,j;
 
 	/* Open the file. */
-	result = vfs_open(progname, O_RDONLY, 0, &v);
+	result=copyin(progname, des,sizeof(progname));
+
+p_cwd=curproc->p_cwd;
+if(p_cwd)
+{
+}
+
+	for(i=0;argv[i]!=NULL;i++)
+	{		
+	}
+argc=i;
+argv1=kmalloc(i*32);
+strlen=kmalloc(i*32);
+	for(i=0;argv[i]!=NULL;i++)
+	{
+		for(j=0;argv[i][j]!='\0';j++)
+		{
+			sum++;	
+		}
+	argv1[i]=kmalloc(j+1);
+	strlen[i]=j+1;		
+	}
+
+	for(i=0;argv[i]!=NULL;i++)
+	{
+		for(j=0;argv[i][j]!='\0';j++)
+		{
+			argv1[i][j]=argv[i][j];	
+		}
+	argv1[i][j]='\0';
+		
+	}
+	argv1[i]='\0';
+sttr=kstrdup((const char*)progname);
+	if(result)
+	{
+		return result;
+	}
+	result = vfs_open(sttr, O_RDONLY, 0, &v);
 	if (result) {
 		return result;
 	}
 
 	/* We should be a new process. */
-	KASSERT(proc_getas() == NULL);
+	//KASSERT(proc_getas() == NULL);
 
 	/* Create a new address space. */
 	as = as_create();
@@ -105,47 +139,50 @@ runprogram(char *progname)
 
 	/* Done with the file now. */
 	vfs_close(v);
-
+t_proc = curproc;
+	curproc->p_cwd=p_cwd;
 	/* Define the user stack in the address space */
 	result = as_define_stack(as, &stackptr);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
-	lock=lock_create("lck_in");
-	result = vfs_open(str, O_RDONLY, 0, &v0);
-	if (result) {
-		return result;
-	}
-	Std_in->v = v0;
-	Std_in->open_Flags=O_RDONLY;
-	Std_in->lock=lock;
-	curproc->filetable_a[0]=Std_in;
+sum=0;
+	for(i=0;i<=argc;i++)
+	{
+		temp=(strlen[i]%4);
+		if(temp!=0)
+		{
+			strlen[i] +=(4-temp);
+		}
+	sum +=strlen[i];
+	}	
+	mo=(stackptr-((sum) + (argc*4)+4));
+	//&stackptr_final=&stckptr_temp;
+	lval =(char *)(stackptr);
+	for(i=0;i<argc;i++)
+	{	
+		lval =(char *)(lval -(strlen[i])) ;
+		for(j=0;argv1[i][j]!='\0';j++)
+		{
+			*(lval+j)=argv1[i][j];
 
-	lock=lock_create("lck_out");
-	result = vfs_open(str1, O_WRONLY, 0, &v1);
-	if (result) {
-		return result;
+		}
+		for(;j<strlen[i];j++)
+		{
+			*(lval+j)='\0';
+		}
+	argv1[i]=lval;
 	}
-	Std_out->v = v1;
-	Std_out->open_Flags=O_WRONLY;
-	Std_out->lock=lock;
-	curproc->filetable_a[1]=Std_out;
-
-	lock=lock_create("lck_err");
-	result = vfs_open(str2, O_WRONLY, 0, &v2);
-	if (result) {
-		return result;
+fin =(char **)(mo);
+	for(i=0;i<=argc;i++)
+	{
+		*(fin+i)=argv1[i];
 	}
-	Std_err->v = v2;
-	Std_err->open_Flags=O_WRONLY;
-	Std_err->lock=lock;
-	curproc->filetable_a[2]=Std_err; 
-
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-			  NULL /*userspace addr of environment*/,
-			  stackptr, entrypoint);
+	enter_new_process(argc/*argc*/, (userptr_t)fin /*userspace addr of argv*/,
+			  (userptr_t)as /*userspace addr of environment*/,
+			  mo, entrypoint);
 
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");

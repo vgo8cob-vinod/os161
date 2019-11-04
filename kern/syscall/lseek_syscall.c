@@ -26,54 +26,74 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include <kern/errno.h>
+#include <types.h>
+#include <copyinout.h>
+#include <syscall.h>
+#include <proc.h>
+#include <uio.h>
+#include <current.h>
+#include <vnode.h>
+#include <kern/fcntl.h>
+#include <kern/seek.h>
+#include <kern/stat.h>
+#include <synch.h>
 /*
- * consoletest.c
- *
- * 	Tests whether console can be written to.
- *
- * This should run correctly when open and write syscalls are correctly implemented
+ * Example system call: get the time of day.
  */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <err.h>
-#include <test161/test161.h>
-
 int
-main(int argc, char **argv)
+sys_lseek(int32_t fd_t, off_t pos,int* whence)
 {
+	bool result;
+int64_t off_chk;
+struct stat* stat1=kmalloc(sizeof(struct stat));
+Error_Struct_64 *Error_Struct_64=kmalloc(sizeof(Error_Struct_64));
+Error_Struct_64->Err_No =0;
+Error_Struct_64->O_fd =-1;
+if((fd_t <0) || (fd_t>=OPEN_MAX))
+{
+	Error_Struct_64->Err_No=EBADF;
+	return (int)Error_Struct_64;
+}
+if(curproc->filetable_a[fd_t]==NULL)
+{
+	Error_Struct_64->Err_No=EBADF;
+	return (int)Error_Struct_64;
+}
+if((fd_t <3) )
+{
+	Error_Struct_64->Err_No=ESPIPE;
+	return (int)Error_Struct_64;
+}
 
-	// Assume argument passing is *not* supported.
-
-	(void) argc;
-	(void) argv;
-
-	int fd, fd1;
-	// Attempt to open a file that we 'know' exists
-	fd = open("bin/true", O_RDONLY);
-	if(fd < 0) {
-		err(-1, "Open syscall failed");
+result = VOP_ISSEEKABLE(curproc->filetable_a[fd_t]->v);
+if (result==0) 
+{
+	Error_Struct_64->Err_No=ESPIPE;
+	return (int)Error_Struct_64;
+}
+off_chk = curproc->filetable_a[fd_t]->offset;
+	switch (*whence) {
+	    case SEEK_SET:
+		off_chk =pos;
+		break;
+	    case SEEK_CUR:
+		off_chk +=pos;
+		break;
+	    case SEEK_END:
+	  VOP_STAT(curproc->filetable_a[fd_t]->v,stat1);//check later if lock has to be changed
+		off_chk =stat1->st_size+pos;
+		break;
+	    default:
+		Error_Struct_64->Err_No=EINVAL;
+		return (int)Error_Struct_64;
 	}
-	else if(fd < 3) {
-		warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	}
-
-	// Attempt to open the same file again. We should get a different fd
-	//fd1 = open("bin/true", O_RDONLY);
-	//if(fd1 < 0) {
-	//	err(-1, "Open syscall failed");
-	//}
-	//else if(fd1 < 3) {
-	//	warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	//}
-	//else if(fd1 == fd) {
-	//	err(-1, "Open syscall returned same file descriptor for second open() call\n");
-	//}
-
-
-	success(TEST161_SUCCESS, SECRET, "/testbin/opentest");
-	return 0;
+if(off_chk<0)
+{
+	Error_Struct_64->Err_No=EINVAL;
+	return (int)Error_Struct_64;
+}
+curproc->filetable_a[fd_t]->offset =off_chk;
+Error_Struct_64->O_fd =curproc->filetable_a[fd_t]->offset;
+	return (int)Error_Struct_64;
 }

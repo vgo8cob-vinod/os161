@@ -1,5 +1,4 @@
-/*
- * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+ /* Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
  *	The President and Fellows of Harvard College.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,54 +25,72 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include <kern/errno.h>
+#include <types.h>
+#include <copyinout.h>
+#include <syscall.h>
+#include <proc.h>
+#include <current.h>
+#include <vfs.h>
+#include <synch.h>
+#include <kern/fcntl.h>
 /*
- * consoletest.c
- *
- * 	Tests whether console can be written to.
- *
- * This should run correctly when open and write syscalls are correctly implemented
+ * Example system call: open the file.
  */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <err.h>
-#include <test161/test161.h>
-
-int
-main(int argc, char **argv)
+int sys_open(const_userptr_t filename, int flags)
 {
+Error_Struct *ErrStruct=kmalloc(sizeof(Error_Struct));
+struct vnode *v;
+int result,i=3;
+char *des= kmalloc(sizeof(filename)) ;
+char *sttr;
+FileHandle_st *open_in= kmalloc(sizeof(FileHandle_st));
+struct lock *lock = kmalloc(sizeof(*lock));
+ErrStruct->O_fd =-1;
+ErrStruct->Err_No =0;
 
-	// Assume argument passing is *not* supported.
-
-	(void) argc;
-	(void) argv;
-
-	int fd, fd1;
-	// Attempt to open a file that we 'know' exists
-	fd = open("bin/true", O_RDONLY);
-	if(fd < 0) {
-		err(-1, "Open syscall failed");
+for(i=3;i<OPEN_MAX;i++)
+{
+	if(curproc->filetable_a[i]==NULL)
+	{
+		break;
 	}
-	else if(fd < 3) {
-		warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	}
-
-	// Attempt to open the same file again. We should get a different fd
-	//fd1 = open("bin/true", O_RDONLY);
-	//if(fd1 < 0) {
-	//	err(-1, "Open syscall failed");
-	//}
-	//else if(fd1 < 3) {
-	//	warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	//}
-	//else if(fd1 == fd) {
-	//	err(-1, "Open syscall returned same file descriptor for second open() call\n");
-	//}
-
-
-	success(TEST161_SUCCESS, SECRET, "/testbin/opentest");
-	return 0;
 }
+if(i==OPEN_MAX)
+{
+	ErrStruct->Err_No=EMFILE;//file table full
+	return (int)ErrStruct;
+}
+if(flags>32)
+{
+	ErrStruct->Err_No=EINVAL;//invalid flag
+	return (int)ErrStruct;
+}
+
+lock=lock_create("lck");
+open_in->lock=lock;
+open_in->open_Flags = flags;
+open_in->offset = 0u;
+open_in->Counter =0;
+
+result=copyin(filename, des,sizeof(filename));
+if(result)
+{
+	ErrStruct->Err_No=result;
+	return (int)ErrStruct;
+}
+sttr=kstrdup((const char*)filename);
+result = vfs_open(sttr, flags, 0, &v);
+if(result)
+{
+	ErrStruct->Err_No=result;
+	return (int)ErrStruct;
+}
+//open_in->Counter++;
+open_in->v = v;
+curproc->filetable_a[i]=open_in;
+ErrStruct->O_fd =i;
+	return (int)ErrStruct;
+}
+
+

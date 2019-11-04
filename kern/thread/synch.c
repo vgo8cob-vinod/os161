@@ -148,15 +148,25 @@ lock_create(const char *name)
 		return NULL;
 	}
 
-	lock->lk_name = kstrdup(name);
-	if (lock->lk_name == NULL) {
+	lock->lock_name = kstrdup(name);
+	if (lock->lock_name == NULL) {
 		kfree(lock);
 		return NULL;
 	}
 
-	HANGMAN_LOCKABLEINIT(&lock->lk_hangman, lock->lk_name);
+	lock->lock_wchan = wchan_create(lock->lock_name);
+	if (lock->lock_wchan == NULL) {
+		kfree(lock->lock_name);
+		kfree(lock);
+		return NULL;
+	}
 
-	// add stuff here as needed
+	HANGMAN_LOCKABLEINIT(&lock->lk_hangman, lock->lock_name);
+
+	spinlock_init(&lock->slp_lock);
+	lock->lock_holder = NULL;
+
+	lock->lock_count = 0u; // add stuff here as needed
 
 	return lock;
 }
@@ -164,47 +174,86 @@ lock_create(const char *name)
 void
 lock_destroy(struct lock *lock)
 {
-	KASSERT(lock != NULL);
+	KASSERT(lock!=NULL);
 
-	// add stuff here as needed
+	KASSERT(lock->lock_holder == NULL) ;
 
-	kfree(lock->lk_name);
+
+	spinlock_cleanup(&lock->slp_lock);
+	wchan_destroy(lock->lock_wchan);
+
+	kfree(lock->lock_name);
 	kfree(lock);
 }
 
 void
 lock_acquire(struct lock *lock)
 {
+	struct thread *mythread;
 	/* Call this (atomically) before waiting for a lock */
-	//HANGMAN_WAIT(&curthread->t_hangman, &lock->lk_hangman);
+	HANGMAN_WAIT(&curthread->t_hangman, &lock->lk_hangman);
 
+
+	KASSERT(curthread->t_in_interrupt == false);
+
+
+	/* Use the semaphore spinlock to protect the wchan as well. */
+	spinlock_acquire(&lock->slp_lock);
+	mythread = curthread;
+	if (lock->lock_holder == mythread) {
+			panic("Deadlock on spinlock %p\n", lock);
+	}
+	while (lock->lock_count == 1) {
+		/*
+		 *
+		 * Note that we don't maintain strict FIFO ordering of
+		 * threads going through the semaphore; that is, we
+		 * might "get" it on the first try even if other
+		 * threads are waiting. Apparently according to some
+		 * textbooks semaphores must for some reason have
+		 * strict ordering. Too bad. :-)
+		 *
+		 * Exercise: how would you implement strict FIFO
+		 * ordering?
+		 */
+		wchan_sleep(lock->lock_wchan, &lock->slp_lock);
+	}
+	lock->lock_count =1;
+	lock->lock_holder = mythread;
+	spinlock_release(&lock->slp_lock);
 	// Write this
 
-	(void)lock;  // suppress warning until code gets written
-
 	/* Call this (atomically) once the lock is acquired */
-	//HANGMAN_ACQUIRE(&curthread->t_hangman, &lock->lk_hangman);
+	HANGMAN_ACQUIRE(&curthread->t_hangman, &lock->lk_hangman);
 }
 
 void
 lock_release(struct lock *lock)
 {
+	KASSERT(lock != NULL);
+	KASSERT(lock->lock_holder != NULL);
+
+	if (lock->lock_holder != curthread) {
+			panic("Some other thread trying to realese %p\n", lock);
+	}
+
+	spinlock_acquire(&lock->slp_lock);
+
+	lock->lock_count=0;
+
+	wchan_wakeone(lock->lock_wchan, &lock->slp_lock);
+	lock->lock_holder = NULL;
+
+	spinlock_release(&lock->slp_lock);
 	/* Call this (atomically) when the lock is released */
-	//HANGMAN_RELEASE(&curthread->t_hangman, &lock->lk_hangman);
-
-	// Write this
-
-	(void)lock;  // suppress warning until code gets written
+	HANGMAN_RELEASE(&curthread->t_hangman, &lock->lk_hangman);
 }
 
 bool
 lock_do_i_hold(struct lock *lock)
 {
-	// Write this
 
-	(void)lock;  // suppress warning until code gets written
-
-	return true; // dummy until code gets written
+return (lock->lock_holder == curthread); // dummy until code gets written
 }
 
 ////////////////////////////////////////////////////////////
@@ -228,6 +277,14 @@ cv_create(const char *name)
 		return NULL;
 	}
 
+	cv->cv_wchan = wchan_create(cv->cv_name);
+	if (cv->cv_wchan == NULL) {
+		kfree(cv->cv_name);
+		kfree(cv);
+		return NULL;
+	}
+spinlock_init(&cv->cv_lock);
+	
 	// add stuff here as needed
 
 	return cv;
@@ -240,6 +297,9 @@ cv_destroy(struct cv *cv)
 
 	// add stuff here as needed
 
+	wchan_destroy(cv->cv_wchan);
+	spinlock_cleanup(&cv->cv_lock);
+
 	kfree(cv->cv_name);
 	kfree(cv);
 }
@@ -247,23 +307,66 @@ cv_destroy(struct cv *cv)
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
+	KASSERT(cv != NULL);
+	KASSERT(lock != NULL);
 	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	spinlock_acquire(&cv->cv_lock);
+	lock_release(lock);
+	
+	wchan_sleep(cv->cv_wchan, &cv->cv_lock);
+	spinlock_release(&cv->cv_lock);
+
+	lock_acquire(lock);
+
+	
+	/* Call this (atomically) once the lock is acquired */
+	//HANGMAN_ACQUIRE(&curthread->t_hangman, &cv->cv_hangman);
+
+	
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+
+
+	KASSERT(cv != NULL);
+	KASSERT(lock != NULL);
+
+	if (lock->lock_holder != curthread) {
+			panic("Some other thread trying to signal %p\n", lock);
+	}
+	
+
+	spinlock_acquire(&cv->cv_lock);
+	wchan_wakeone(cv->cv_wchan,&cv->cv_lock);
+	spinlock_release(&cv->cv_lock);
+
+	
+	/* Call this (atomically) when the lock is released */
+	//HANGMAN_RELEASE(&curthread->t_hangman, &cv->cv_hangman);
+
+
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	KASSERT(cv != NULL);
+	KASSERT(lock != NULL);
+
+	if (lock->lock_holder != curthread) {
+			panic("Some other thread trying to signal %p\n", lock);
+	}
+
+	spinlock_acquire(&cv->cv_lock);
+	wchan_wakeall(cv->cv_wchan,&cv->cv_lock);
+	spinlock_release(&cv->cv_lock);
+
+
+	/* Call this (atomically) when the lock is released */
+	//HANGMAN_RELEASE(&curthread->t_hangman, &cv->cv_hangman);
+
+	
+	
 }

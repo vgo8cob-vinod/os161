@@ -26,54 +26,39 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include <kern/errno.h>
+#include <kern/wait.h>
+#include <types.h>
+#include <copyinout.h>
+#include <syscall.h>
+#include <proc.h>
+#include <uio.h>
+#include <current.h>
+#include <vnode.h>
+#include <kern/fcntl.h>
+#include <vfs.h>
+#include <synch.h>
 /*
- * consoletest.c
- *
- * 	Tests whether console can be written to.
- *
- * This should run correctly when open and write syscalls are correctly implemented
+ * Example system call: get the time of day.
  */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <err.h>
-#include <test161/test161.h>
-
-int
-main(int argc, char **argv)
+void
+sys_exit(int exitcode)
 {
+bool chk;
+chk = lock_do_i_hold(curproc->proc_lock);
+if(chk!=1)
+{
+lock_acquire(curproc->proc_lock);
+}
+curproc->exited_b=1;
+curproc->exit_code_i=_MKWAIT_EXIT(exitcode);
+cv_signal(curproc->proc_cv, curproc->proc_lock);
+chk = lock_do_i_hold(curproc->proc_lock);
+if(chk==1)
+{
+lock_release(curproc->proc_lock);
+}
 
-	// Assume argument passing is *not* supported.
-
-	(void) argc;
-	(void) argv;
-
-	int fd, fd1;
-	// Attempt to open a file that we 'know' exists
-	fd = open("bin/true", O_RDONLY);
-	if(fd < 0) {
-		err(-1, "Open syscall failed");
-	}
-	else if(fd < 3) {
-		warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	}
-
-	// Attempt to open the same file again. We should get a different fd
-	//fd1 = open("bin/true", O_RDONLY);
-	//if(fd1 < 0) {
-	//	err(-1, "Open syscall failed");
-	//}
-	//else if(fd1 < 3) {
-	//	warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	//}
-	//else if(fd1 == fd) {
-	//	err(-1, "Open syscall returned same file descriptor for second open() call\n");
-	//}
-
-
-	success(TEST161_SUCCESS, SECRET, "/testbin/opentest");
-	return 0;
+thread_exit();
+proc_destroy(curproc);
 }

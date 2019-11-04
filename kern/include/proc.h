@@ -37,10 +37,24 @@
  */
 
 #include <spinlock.h>
+#include <limits.h>
 
 struct addrspace;
 struct thread;
 struct vnode;
+
+#define MAX_FILEDESCRIPTOR	64
+extern struct proc* processtable_a[PID_MAX];
+
+typedef struct 
+{
+int64_t offset;
+int open_Flags;
+struct vnode *v;
+int Counter;
+struct lock *lock;
+}FileHandle_st;
+
 
 /*
  * Process structure.
@@ -69,6 +83,14 @@ struct proc {
 
 	/* VFS */
 	struct vnode *p_cwd;		/* current working directory */
+
+	FileHandle_st* filetable_a[OPEN_MAX];
+	int PID_i;
+	int PPID_i;
+	int exit_code_i;
+	bool exited_b;
+	struct lock *proc_lock;
+	struct cv *proc_cv;
 
 	/* add more material here as needed */
 };

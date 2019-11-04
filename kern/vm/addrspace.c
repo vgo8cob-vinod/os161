@@ -40,6 +40,13 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
+void
+vm_bootstrap(void)
+{
+	/* Do nothing. */
+}
+
+
 struct addrspace *
 as_create(void)
 {

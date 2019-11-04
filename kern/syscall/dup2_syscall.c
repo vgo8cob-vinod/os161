@@ -26,54 +26,55 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include <kern/errno.h>
+#include <types.h>
+#include <copyinout.h>
+#include <syscall.h>
+#include <proc.h>
+#include <uio.h>
+#include <current.h>
+#include <vnode.h>
+#include <kern/fcntl.h>
+#include <vfs.h>
+#include <synch.h>
 /*
- * consoletest.c
- *
- * 	Tests whether console can be written to.
- *
- * This should run correctly when open and write syscalls are correctly implemented
+ * Example system call: get the time of day.
  */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <err.h>
-#include <test161/test161.h>
-
 int
-main(int argc, char **argv)
+sys_dup2(int fd_t,int New_fd)
 {
+Error_Struct *ErrStruct=kmalloc(sizeof(Error_Struct));
+ErrStruct->Err_No =0;
+ErrStruct->O_fd =-1;
+if((fd_t <0) || (fd_t>OPEN_MAX))
+{
+	ErrStruct->Err_No=EBADF;
+	return (int)ErrStruct;
+}
+if((New_fd==OPEN_MAX))
+{
+	ErrStruct->Err_No=EMFILE;
+	return (int)ErrStruct;
+}
+if((New_fd <0) || (New_fd>OPEN_MAX))
+{
+	ErrStruct->Err_No=EBADF;
+	return (int)ErrStruct;
+}
 
-	// Assume argument passing is *not* supported.
+if(curproc->filetable_a[fd_t]==NULL)
+{
+	ErrStruct->Err_No=EBADF;
+	return (int)ErrStruct;
+}
+lock_acquire(curproc->filetable_a[fd_t]->lock);
+if(curproc->filetable_a[New_fd]!=NULL)
+{
+vfs_close(curproc->filetable_a[New_fd]->v);
+}
 
-	(void) argc;
-	(void) argv;
-
-	int fd, fd1;
-	// Attempt to open a file that we 'know' exists
-	fd = open("bin/true", O_RDONLY);
-	if(fd < 0) {
-		err(-1, "Open syscall failed");
-	}
-	else if(fd < 3) {
-		warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	}
-
-	// Attempt to open the same file again. We should get a different fd
-	//fd1 = open("bin/true", O_RDONLY);
-	//if(fd1 < 0) {
-	//	err(-1, "Open syscall failed");
-	//}
-	//else if(fd1 < 3) {
-	//	warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	//}
-	//else if(fd1 == fd) {
-	//	err(-1, "Open syscall returned same file descriptor for second open() call\n");
-	//}
-
-
-	success(TEST161_SUCCESS, SECRET, "/testbin/opentest");
-	return 0;
+curproc->filetable_a[New_fd]=curproc->filetable_a[fd_t];
+ErrStruct->O_fd =New_fd;
+lock_release(curproc->filetable_a[fd_t]->lock);
+	return (int)ErrStruct;
 }

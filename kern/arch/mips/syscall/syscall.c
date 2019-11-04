@@ -35,8 +35,9 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
-
-
+#include <addrspace.h>
+#include <proc.h>
+#include <synch.h>
 /*
  * System call dispatcher.
  *
@@ -81,6 +82,9 @@ syscall(struct trapframe *tf)
 	int callno;
 	int32_t retval;
 	int err;
+volatile off_t chk;
+	Error_Struct *ErrStruct=kmalloc(sizeof(Error_Struct));
+	Error_Struct_64 *ErrorStruct_64=kmalloc(sizeof(Error_Struct_64));
 
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
@@ -109,6 +113,76 @@ syscall(struct trapframe *tf)
 				 (userptr_t)tf->tf_a1);
 		break;
 
+	    case SYS_execv:
+		err = sys_execv((const_userptr_t)tf->tf_a0,
+				 (char **)tf->tf_a1);
+		break;
+
+	    case SYS_write:
+		ErrStruct = (Error_Struct *)sys_write((int32_t)tf->tf_a0,
+				 (const_userptr_t)tf->tf_a1,
+                                 (size_t)tf->tf_a2);
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+
+	    case SYS_open:		
+		ErrStruct = (Error_Struct *)sys_open((const_userptr_t)tf->tf_a0,(int)tf->tf_a1);
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+
+	    case SYS_read:
+		ErrStruct = (Error_Struct *)sys_read((int32_t)tf->tf_a0,
+				 (userptr_t)tf->tf_a1,
+                                 (size_t)tf->tf_a2);
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+	    case SYS_close:
+		ErrStruct = (Error_Struct *)sys_close((int32_t)tf->tf_a0);
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+
+	    case SYS_fork:
+		ErrStruct = (Error_Struct *)sys_fork(tf);
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+
+	    case SYS_dup2:
+		ErrStruct = (Error_Struct *)sys_dup2((int)tf->tf_a0,(int)tf->tf_a1);
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+	    case SYS_getpid:
+		ErrStruct = (Error_Struct *)sys_getpid();
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+	    case SYS_waitpid:
+		ErrStruct = (Error_Struct *)sys_waitpid((int32_t)tf->tf_a0,(userptr_t)tf->tf_a1,(int32_t)tf->tf_a2);
+		retval =ErrStruct->O_fd;		 
+		err =ErrStruct->Err_No;
+               break;
+
+	    case SYS_lseek:
+		chk=((off_t)(tf->tf_a2)) ;
+		chk=(chk<<32) & (off_t)0xffffffff00000000;
+		chk|=(off_t)((off_t)tf->tf_a3);
+		ErrorStruct_64 = (Error_Struct_64 *)sys_lseek((int32_t)tf->tf_a0,
+				 chk,
+                                 (int*)(tf->tf_sp+16));
+		retval=(int32_t)(ErrorStruct_64->O_fd>>32);
+		tf->tf_v1 =(int32_t)ErrorStruct_64->O_fd;		 
+		err =ErrorStruct_64->Err_No;
+               break;
+
+	   case SYS__exit:		
+		sys_exit((int)tf->tf_a0);
+		err=0;
+		break;
 	    /* Add stuff here */
 
 	    default:
@@ -139,8 +213,8 @@ syscall(struct trapframe *tf)
 	 */
 
 	tf->tf_epc += 4;
-
-	/* Make sure the syscall code didn't forget to lower spl */
+	
+/* Make sure the syscall code didn't forget to lower spl */
 	KASSERT(curthread->t_curspl == 0);
 	/* ...or leak any spinlocks */
 	KASSERT(curthread->t_iplhigh_count == 0);
@@ -155,7 +229,16 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
-enter_forked_process(struct trapframe *tf)
+enter_forked_process(struct trapframe *tf,unsigned long data2)
 {
-	(void)tf;
+struct trapframe tf1;
+tf1 = *tf;
+tf1.tf_a3 = 0;
+tf1.tf_v0 = 0;
+tf1.tf_epc += 4;
+lock_acquire(curproc->proc_lock);
+proc_setas(curproc->p_addrspace);
+as_activate();
+mips_usermode(&tf1);
+	(void)data2;
 }

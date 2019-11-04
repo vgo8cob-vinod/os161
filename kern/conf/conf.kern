@@ -384,9 +384,21 @@ file      vfs/devnull.c
 # calls assignment.)
 #
 
+file      syscall/write_syscalls.c
+file      syscall/open_syscalls.c
 file      syscall/loadelf.c
 file      syscall/runprogram.c
 file      syscall/time_syscalls.c
+file      syscall/read_syscall.c
+file      syscall/lseek_syscall.c
+file      syscall/close_syscall.c
+file      syscall/dup2_syscall.c
+file      syscall/fork_syscall.c
+file      syscall/getpid_syscall.c
+file      syscall/waitpid_syscall.c
+file      syscall/exit_syscall.c
+file      syscall/execv_syscall.c
+
 
 #
 # Startup and initialization

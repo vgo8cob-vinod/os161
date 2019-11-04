@@ -542,11 +542,12 @@ cvtest(int nargs, char **args)
 			lock_destroy(testlock);
 			cv_destroy(testcv);
 			sem_destroy(donesem);
+			
 		}
 	}
 	spinlock_init(&status_lock);
 	test_status = TEST161_SUCCESS;
-
+	kprintf_n("Thread reachhh");
 	testval1 = NTHREADS-1;
 	for (i=0; i<NTHREADS; i++) {
 		kprintf_t(".");

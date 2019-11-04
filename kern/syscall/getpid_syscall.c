@@ -1,5 +1,4 @@
-/*
- * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+ /* Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
  *	The President and Fellows of Harvard College.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,54 +25,34 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include <kern/errno.h>
+#include <types.h>
+#include <copyinout.h>
+#include <syscall.h>
+#include <mips/trapframe.h>
+#include <proc.h>
+#include <current.h>
+#include <vfs.h>
+#include <synch.h>
+#include <addrspace.h>
+#include <kern/fcntl.h>
+#include <proc.h>
 /*
- * consoletest.c
- *
- * 	Tests whether console can be written to.
- *
- * This should run correctly when open and write syscalls are correctly implemented
+ * Example system call: open the file.
  */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <err.h>
-#include <test161/test161.h>
-
-int
-main(int argc, char **argv)
+int sys_getpid(void)
 {
 
-	// Assume argument passing is *not* supported.
+Error_Struct *ErrStruct=kmalloc(sizeof(Error_Struct));
 
-	(void) argc;
-	(void) argv;
-
-	int fd, fd1;
-	// Attempt to open a file that we 'know' exists
-	fd = open("bin/true", O_RDONLY);
-	if(fd < 0) {
-		err(-1, "Open syscall failed");
-	}
-	else if(fd < 3) {
-		warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	}
-
-	// Attempt to open the same file again. We should get a different fd
-	//fd1 = open("bin/true", O_RDONLY);
-	//if(fd1 < 0) {
-	//	err(-1, "Open syscall failed");
-	//}
-	//else if(fd1 < 3) {
-	//	warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	//}
-	//else if(fd1 == fd) {
-	//	err(-1, "Open syscall returned same file descriptor for second open() call\n");
-	//}
-
-
-	success(TEST161_SUCCESS, SECRET, "/testbin/opentest");
-	return 0;
+if (ErrStruct == NULL) 
+{
+	panic("kmalloc failed\n");
 }
+ErrStruct->Err_No =0;
+
+ErrStruct->O_fd =curproc->PID_i;;
+	return (int)ErrStruct;
+}
+
+

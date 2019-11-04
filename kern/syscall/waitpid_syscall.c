@@ -26,54 +26,67 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-
+#include <kern/errno.h>
+#include <kern/wait.h>
+#include <types.h>
+#include <copyinout.h>
+#include <syscall.h>
+#include <proc.h>
+#include <uio.h>
+#include <current.h>
+#include <vnode.h>
+#include <kern/fcntl.h>
+#include <vfs.h>
+#include <synch.h>
+#include <wchan.h>
 /*
- * consoletest.c
- *
- * 	Tests whether console can be written to.
- *
- * This should run correctly when open and write syscalls are correctly implemented
+ * Example system call: get the time of day.
  */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <err.h>
-#include <test161/test161.h>
-
 int
-main(int argc, char **argv)
+sys_waitpid(int pid, userptr_t status, int options)
 {
+Error_Struct *ErrStruct=kmalloc(sizeof(Error_Struct));
+int result;
+bool chk;
+ErrStruct->Err_No =0;
+ErrStruct->O_fd =-1;
+if((pid <PID_MIN) || (pid>PID_MAX))
+{
+	ErrStruct->Err_No=ESRCH;
+	return (int)ErrStruct;
+}
+if((curproc->PID_i!=processtable_a[pid]->PPID_i))
+{
+	ErrStruct->Err_No=ECHILD;
+	return (int)ErrStruct;
+}
+if((options!=0))
+{
+	ErrStruct->Err_No=EINVAL;
+	return (int)ErrStruct;
+}
+chk = lock_do_i_hold(processtable_a[pid]->proc_lock);
+if(chk!=1)
+{
+lock_acquire(processtable_a[pid]->proc_lock);
+}
 
-	// Assume argument passing is *not* supported.
+while(processtable_a[pid]->exited_b==0)
+{
+cv_wait(processtable_a[pid]->proc_cv, processtable_a[pid]->proc_lock);
+}
+chk = lock_do_i_hold(processtable_a[pid]->proc_lock);
+if(chk==1)
+{
+lock_release(processtable_a[pid]->proc_lock);
+}
 
-	(void) argc;
-	(void) argv;
-
-	int fd, fd1;
-	// Attempt to open a file that we 'know' exists
-	fd = open("bin/true", O_RDONLY);
-	if(fd < 0) {
-		err(-1, "Open syscall failed");
-	}
-	else if(fd < 3) {
-		warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	}
-
-	// Attempt to open the same file again. We should get a different fd
-	//fd1 = open("bin/true", O_RDONLY);
-	//if(fd1 < 0) {
-	//	err(-1, "Open syscall failed");
-	//}
-	//else if(fd1 < 3) {
-	//	warnx("Open syscall returned number used by standard file descriptors (0,1,2)");
-	//}
-	//else if(fd1 == fd) {
-	//	err(-1, "Open syscall returned same file descriptor for second open() call\n");
-	//}
-
-
-	success(TEST161_SUCCESS, SECRET, "/testbin/opentest");
-	return 0;
+result=copyout(&processtable_a[pid]->exit_code_i, status,(sizeof(status)));
+if(result)
+{
+	ErrStruct->Err_No=result;
+	return (int)ErrStruct;
+}
+ErrStruct->O_fd =pid;
+	return (int)ErrStruct;
 }
